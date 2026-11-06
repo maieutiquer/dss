@@ -22,10 +22,16 @@ package eu.europa.esig.dss.spi.x509;
 
 import eu.europa.esig.dss.enumerations.CertificateSourceType;
 import eu.europa.esig.dss.model.x509.CertificateToken;
+import eu.europa.esig.dss.spi.DSSASN1Utils;
 import eu.europa.esig.dss.spi.DSSUtils;
 import org.junit.jupiter.api.Test;
 
+import javax.security.auth.x500.X500Principal;
 import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -152,6 +158,49 @@ class CommonCertificateSourceTest {
 		ccTwo.addCertificate(SAME_PK_CERT_3);
 		assertTrue(ccOne.isCertificateSourceEquivalent(ccTwo));
 		assertTrue(ccTwo.isCertificateSourceEquivalent(ccOne));
+	}
+
+	@Test
+	void findTokensFromResponderIdRef() {
+		CommonCertificateSource source = new CommonCertificateSource();
+		source.addCertificate(CERT);
+		source.addCertificate(SAME_PK_CERT_1);
+		source.addCertificate(SAME_PK_CERT_2);
+		source.addCertificate(SAME_PK_CERT_3);
+
+		CertificateRef byKey = responderIdRef(null, DSSASN1Utils.computeSkiFromCert(SAME_PK_CERT_1));
+		assertEquals(new HashSet<>(Arrays.asList(SAME_PK_CERT_1, SAME_PK_CERT_2, SAME_PK_CERT_3)),
+				source.findTokensFromCertRef(byKey));
+		assertEquals(matchedByMatcher(source, byKey), source.findTokensFromCertRef(byKey));
+
+		CertificateRef byOtherKey = responderIdRef(null, DSSASN1Utils.computeSkiFromCert(CERT));
+		assertEquals(Collections.singleton(CERT), source.findTokensFromCertRef(byOtherKey));
+
+		CertificateRef byUnknownKey = responderIdRef(null, new byte[20]);
+		assertTrue(source.findTokensFromCertRef(byUnknownKey).isEmpty());
+
+		// a name takes precedence over the key, as in ResponderId#isRelatedToCertificate
+		CertificateRef byName = responderIdRef(CERT.getSubject().getPrincipal(),
+				DSSASN1Utils.computeSkiFromCert(SAME_PK_CERT_1));
+		assertEquals(Collections.singleton(CERT), source.findTokensFromCertRef(byName));
+		assertEquals(matchedByMatcher(source, byName), source.findTokensFromCertRef(byName));
+	}
+
+	private static CertificateRef responderIdRef(X500Principal name, byte[] ski) {
+		CertificateRef certificateRef = new CertificateRef();
+		certificateRef.setResponderId(new ResponderId(name, ski));
+		return certificateRef;
+	}
+
+	private static Set<CertificateToken> matchedByMatcher(CertificateSource source, CertificateRef certificateRef) {
+		CertificateTokenRefMatcher matcher = new CertificateTokenRefMatcher();
+		Set<CertificateToken> result = new HashSet<>();
+		for (CertificateToken certificateToken : source.getCertificates()) {
+			if (matcher.match(certificateToken, certificateRef)) {
+				result.add(certificateToken);
+			}
+		}
+		return result;
 	}
 
 }
