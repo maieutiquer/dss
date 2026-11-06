@@ -322,7 +322,15 @@ public class CommonCertificateSource implements CertificateSource {
 	@Override
 	public Set<CertificateToken> findTokensFromCertRef(CertificateRef certificateRef) {
 		Set<CertificateToken> result = new HashSet<>();
+		byte[] responderSki = getResponderIdSkiOnly(certificateRef);
 		for (EquivalentCertificatesEntity entry : entitiesByEntityKey.values()) {
+			if (responderSki != null) {
+				// all certificates of an entity share the SKI computed when they were added
+				if (Arrays.equals(entry.getSki(), responderSki)) {
+					result.addAll(entry.getEquivalentCertificates());
+				}
+				continue;
+			}
 			for (CertificateToken certificateToken : entry.getEquivalentCertificates()) {
 				if (doesCertificateReferenceMatch(certificateToken, certificateRef)) {
 					result.add(certificateToken);
@@ -330,6 +338,23 @@ public class CommonCertificateSource implements CertificateSource {
 			}
 		}
 		return result;
+	}
+
+	/**
+	 * Returns the SKI of a reference identified only by an OCSP ResponderId byKey, for which
+	 * {@link CertificateTokenRefMatcher#match} reduces to comparing the SKI of the certificate's public key
+	 *
+	 * @param certificateRef {@link CertificateRef}
+	 * @return the ResponderId SKI, or null when the reference carries any other identifier
+	 */
+	private static byte[] getResponderIdSkiOnly(CertificateRef certificateRef) {
+		ResponderId responderId = certificateRef.getResponderId();
+		if (responderId == null || responderId.getX500Principal() != null || responderId.getSki() == null
+				|| certificateRef.getCertDigest() != null || certificateRef.getCertificateIdentifier() != null
+				|| certificateRef.getPublicKey() != null) {
+			return null;
+		}
+		return responderId.getSki();
 	}
 
 	/**
